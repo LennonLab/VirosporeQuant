@@ -33,6 +33,7 @@ anova_result <- aov(Recovered_VPFU ~ Distance_from_PFU_cm, data = viro_dist)
 summary(anova_result)
 
 ```
+
 ```{r}
 install.packages("fitdistrplus")
 library(fitdistrplus)
@@ -120,8 +121,9 @@ ggplot(summary_data, aes(x = Distance_from_PFU_cm, y = mean_VPFU)) +
   ggtitle("C")
 
 ```
+
 ```{r}
-# Load required library
+# Load library
 library(ggplot2)
 
 # Plot using geom_smooth with LOESS smoothing

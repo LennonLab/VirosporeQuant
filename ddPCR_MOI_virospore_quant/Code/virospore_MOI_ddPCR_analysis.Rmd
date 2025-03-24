@@ -1,0 +1,78 @@
+---
+title: "Virospore_MOI_ddpcr_analysis"
+author: "Joy O'Brien"
+date: "2025-03-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Set wd
+setwd("~/GitHub/VirosporeQuant")
+```
+
+```{r}
+# Load data
+virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/Data/ddPCR_Quant/20250306_SPO1_Delta6_MOI_ddPCR.csv")
+```
+
+```{r}
+# Calculate entrapment efficiency for each replicate sample
+virospore_MOI$Entrapment_Efficiency <- (virospore_MOI$SPO1_Copy_copies_ul / virospore_MOI$Bacillus_Copy) * 100
+
+```
+
+```{r}
+# Load libraries
+library(dunn.test)
+# Stats comparing entrapment efficieny at different MOI
+# Check normality
+shapiro.test(virospore_MOI$Entrapment_Efficiency) # based on this the data is not normally distributed
+
+# Perform Kruskal-Wallis because the data is not normally distributed
+kruskal.test(Entrapment_Efficiency ~ factor(MOI), data = virospore_MOI)
+
+# Post-hoc for Kruskal
+dunn.test(virospore_MOI$Entrapment_Efficiency, virospore_MOI$MOI, method = "bonferroni")
+```
+
+```{r}
+# testing for correlation?
+cor.test(virospore_MOI$MOI, virospore_MOI$Entrapment_Efficiency, method = "spearman")  # Use Spearman for non-linear relationships
+
+```
+```{r}
+# Visualize entrapment efficiency via box plot
+ggplot(virospore_MOI, aes(x = factor(MOI), y = Entrapment_Efficiency, fill = factor(MOI))) +
+  geom_boxplot(alpha = 0.6) +
+  geom_jitter(width = 0.2, alpha = 0.5, color = "black") +  # Show individual replicates
+  theme_minimal() +
+  scale_y_log10() + # Log transform y axis
+  labs(y = "Entrapment Efficiency (%)", x = "MOI") +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+# Bar plot
+library(ggplot2)
+library(dplyr)
+
+# Calculate mean and standard error for each MOI
+summary_stats <- virospore_MOI %>%
+  group_by(MOI) %>%
+  summarise(
+    mean = mean(Entrapment_Efficiency),
+    se = sd(Entrapment_Efficiency) / sqrt(n())  # Standard Error
+  )
+
+# Bar plot
+ggplot(summary_stats, aes(x = factor(MOI), y = mean)) +
+  geom_bar(stat = "identity", fill = "steelblue", color = "black", width = 0.6) +
+  geom_errorbar(aes(ymin = mean - se, ymax = mean + se), width = 0.2) +
+  scale_y_log10() +
+  theme_minimal() +
+  labs(y = "Mean Entrapment Efficiency (%)", x = "MOI") +
+  theme(text = element_text(size = 14))
+
+```
+
