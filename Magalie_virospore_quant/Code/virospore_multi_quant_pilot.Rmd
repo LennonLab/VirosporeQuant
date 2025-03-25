@@ -51,16 +51,27 @@ viro_quant.long <- viro_quant %>%
   pivot_longer(cols = c(VPFU, Free_PFU, CFU), 
                names_to = "variable", 
                values_to = "value")
+region_shading <- data.frame(
+  Region = c("Center", "Annulus", "Lawn"),
+  xmin = c(0, 0.1, 0.2),   # Starting x-value for each region
+  xmax = c(0.1, 0.2, 0.4)  # Ending x-value for each region
+)
+region_shading$Region <- factor(region_shading$Region, levels = c("Center", "Annulus", "Lawn"))
 
 # Plot
-ggplot(viro_quant.long, aes(x = Distance_from_PFU_cm, y = value, color = variable, group = variable)) +
+ggplot(viro_quant.long, aes(x = Distance_from_PFU_cm_correct, y = value, color = variable, group = variable)) +
   geom_line(linewidth = 1.2) +  
-  geom_point(size = 2) + 
+  geom_point(aes(color = variable),size = 2) + 
   scale_y_log10() +
+    # Add shaded regions using geom_rect()
+  geom_rect(data = region_shading, inherit.aes = FALSE, 
+            aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = Inf, fill = Region), 
+            alpha = 0.3) +
   #facet_wrap(~ Region) +  
-  scale_color_manual(values = c("coral", "cyan", "purple"), labels =c("Uninfected spores", "Free phage", "Virospores")) +  # Custom colors
+  #scale_color_manual(values = c("coral", "cyan", "purple"), labels =c("Uninfected spores", "Free phage", "Virospores")) +  # Custom colors
   labs(title = "Virospores, Free phage, and uninfected spores vs Distance", 
        x = "Distance from PFU (cm)", y = "Virospores, Free phage , uninfected spores per cm^2", 
-       color = "Measurement") 
+       color = "Measurement") +
+scale_fill_manual(values = c("Center" = "lightblue", "Annulus" = "lightgreen", "Lawn" = "lightpink"))
 ```
 
