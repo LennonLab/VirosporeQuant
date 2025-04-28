@@ -19,7 +19,7 @@ library(ggplot2)
 library(mgcv)
 
 # Read in data
-viro_quant <- read_excel("~/GitHub/VirosporeQuant/Magalie_virospore_quant/Data/Annulus_Quant/20250317_virospore_multiquant_magalie.xlsx", sheet = "raw_data")
+viro_quant <- read_excel("~/GitHub/VirosporeQuant/Magalie_virospore_quant/Data/Annulus_Quant/20250317_virospore_multiquant_magalie.xlsx", sheet = "raw_data_joy")
 ```
 
 Troubleshooting the back-calculation process
@@ -36,13 +36,13 @@ ORDER OF OPERATIONS FOR CALCULATIONS
 ```{r}
 # Calculate CFU and PFU of the original suspension which is # of PFU or CFU / vol plated x total dilution factor
 viro_quant$Free_PFU_mL_3rep <- viro_quant$Free_PFU_10e3 / (0.1 * (10^-3))
-viro_quant$Free_PFU_mL_5rep <- viro_quant$Free_PFU_10e5 / (0.1 * (10^-5))
-viro_quant$Free_PFU_mL_7rep <- viro_quant$Free_PFU_10e7 / (0.1 * (10^-7))
+#viro_quant$Free_PFU_mL_5rep <- viro_quant$Free_PFU_10e5 / (0.1 * (10^-5))
+#viro_quant$Free_PFU_mL_7rep <- viro_quant$Free_PFU_10e7 / (0.1 * (10^-7))
 
 # Uninfected spores
-viro_quant$Spores_CFU_mL_3rep <- viro_quant$Spores_CFU_10e3 / (0.1 * (10^-3))
-viro_quant$Spores_CFU_mL_5rep <- viro_quant$Spores_CFU_10e5 / (0.1 * (10^-5))
-viro_quant$Spores_CFU_mL_7rep <- viro_quant$Spores_CFU_10e7 / (0.1 * (10^-7))
+viro_quant$Spores_CFU_mL_3rep <- viro_quant$Spores_CFU_10e3 / (0.25 * (10^-3))
+#viro_quant$Spores_CFU_mL_5rep <- viro_quant$Spores_CFU_10e5 / (0.25 * (10^-5))
+#viro_quant$Spores_CFU_mL_7rep <- viro_quant$Spores_CFU_10e7 / (0.25 * (10^-7))
 
 
 ```
@@ -50,25 +50,25 @@ viro_quant$Spores_CFU_mL_7rep <- viro_quant$Spores_CFU_10e7 / (0.1 * (10^-7))
 1B. Calculate CFU/mL and PFU/mL per stock solution for each sample
 ```{r}
 viro_quant$Free_PFU_3stock <- viro_quant$Free_PFU_mL_3rep * 1.5
-viro_quant$Free_PFU_5stock <- viro_quant$Free_PFU_mL_5rep * 1.5
-viro_quant$Free_PFU_7stock <- viro_quant$Free_PFU_mL_7rep * 1.5
+#viro_quant$Free_PFU_5stock <- viro_quant$Free_PFU_mL_5rep * 1.5
+#viro_quant$Free_PFU_7stock <- viro_quant$Free_PFU_mL_7rep * 1.5
 
 viro_quant$Spores_CFU_3stock <- viro_quant$Spores_CFU_mL_3rep * 1.5
-viro_quant$Spores_CFU_5stock <- viro_quant$Spores_CFU_mL_5rep * 1.5
-viro_quant$Spores_CFU_7stock <- viro_quant$Spores_CFU_mL_7rep * 1.5
+#viro_quant$Spores_CFU_5stock <- viro_quant$Spores_CFU_mL_5rep * 1.5
+#viro_quant$Spores_CFU_7stock <- viro_quant$Spores_CFU_mL_7rep * 1.5
 ```
 
 1C. Calculate the amount of Free PFU and Spores CFU per cm^2 area
 ```{r}
 # Calculate per area for free phage
 viro_quant$Free_PFU_3_cm2 <- viro_quant$Free_PFU_3stock / (0.00785)
-viro_quant$Free_PFU_5_cm2 <- viro_quant$Free_PFU_5stock / (0.00785)
-viro_quant$Free_PFU_7_cm2 <- viro_quant$Free_PFU_7stock / (0.00785)
+#viro_quant$Free_PFU_5_cm2 <- viro_quant$Free_PFU_5stock / (0.00785)
+#viro_quant$Free_PFU_7_cm2 <- viro_quant$Free_PFU_7stock / (0.00785)
 
 # For free spores
 viro_quant$Spores_CFU_3_cm2 <- viro_quant$Spores_CFU_3stock / (0.00785)
-viro_quant$Spores_CFU_5_cm2 <- viro_quant$Spores_CFU_5stock / (0.00785)
-viro_quant$Spores_CFU_7_cm2 <- viro_quant$Spores_CFU_7stock / (0.00785)
+#viro_quant$Spores_CFU_5_cm2 <- viro_quant$Spores_CFU_5stock / (0.00785)
+#viro_quant$Spores_CFU_7_cm2 <- viro_quant$Spores_CFU_7stock / (0.00785)
 ```
 
 
@@ -84,6 +84,13 @@ viro_quant$VPFU_stock <- viro_quant$VPFU * 1.5
 viro_quant$VPFU_cm2 <- viro_quant$VPFU / (0.00785)
 ```
 
+```{r}
+# Plotting Joy's counts
+viro_quant.new <- viro_quant[, c("Plaque", "Sample", "Region", "VPFU_cm2", "Distance_from_PFU_center_cm", "Free_PFU_3_cm2", "Spores_CFU_3_cm2")]
+
+# Calculate total spores with VPFU and the averages 
+viro_quant.new$Spores_total <- viro_quant.new$Spores_CFU_3_cm2 + viro_quant.new$VPFU_cm2
+```
 
 
 2. Prepare to plot the data 
@@ -97,7 +104,7 @@ viro_quant.new$Free_PFU_Avg <- rowMeans(viro_quant.new[, c("Free_PFU_3_cm2", "Fr
 viro_quant.new$Spores_CFU_Avg <- rowMeans(viro_quant.new[, c("Spores_CFU_3_cm2", "Spores_CFU_5_cm2", "Spores_CFU_7_cm2")], na.rm = TRUE)
 
 # Calculate total spores with VPFU and the averages 
-viro_quant.new$Spores_total <- viro_quant.new$Spores_CFU_Avg + viro_quant.new$VPFU_cm2
+viro_quant.new$Spores_total <- viro_quant.new$Spores_CFU_3_cm2 + viro_quant.new$VPFU_cm2
 
 # Average the total spores count 
 #viro_quant.new$total_spores_Avg <- rowMeans(viro_quant.new[, c("total_spores_3rep", "total_spores_5rep", "total_spores_7rep")], na.rm = TRUE)
@@ -107,7 +114,7 @@ viro_quant.new$Spores_total <- viro_quant.new$Spores_CFU_Avg + viro_quant.new$VP
 ```{r}
 # Convert data to long format
 viro_quant.long <- viro_quant.new %>%
-  pivot_longer(cols = c(VPFU_cm2, Free_PFU_Avg, Spores_CFU_Avg), 
+  pivot_longer(cols = c(VPFU_cm2, Free_PFU_3_cm2, Spores_CFU_3_cm2), 
                names_to = "variable", 
                values_to = "value") #%>%
                #mutate(value = log(value)) # for log transforming data
@@ -128,6 +135,7 @@ ggplot(viro_quant.long, aes(x = Distance_from_PFU_center_cm, y = value, color = 
             alpha = 0.3) +
   # Line and point layers
   geom_line(linewidth = 1.2) +  
+  #geom_smooth() +
   geom_point(aes(color = variable), size = 2) + 
   # Custom fill colors for shaded regions
   scale_fill_manual(values = c("Center" = "lightblue", "Annulus" = "lightgreen", "Lawn" = "lightpink")) +  

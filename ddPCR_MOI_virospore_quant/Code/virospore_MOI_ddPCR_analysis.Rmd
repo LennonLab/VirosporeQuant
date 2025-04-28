@@ -7,12 +7,12 @@ output: html_document
 
 ```{r setup, include=FALSE}
 # Set wd
-setwd("~/GitHub/VirosporeQuant")
+setwd("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant")
 ```
 
 ```{r}
 # Load data
-virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/Data/ddPCR_Quant/20250306_SPO1_Delta6_MOI_ddPCR.csv")
+virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Data/20250306_SPO1_Delta6_MOI_ddPCR.csv")
 ```
 
 ```{r}
@@ -34,10 +34,21 @@ kruskal.test(Entrapment_Efficiency ~ factor(MOI), data = virospore_MOI)
 # Post-hoc for Kruskal
 dunn.test(virospore_MOI$Entrapment_Efficiency, virospore_MOI$MOI, method = "bonferroni")
 ```
+```{r}
+library(ggpubr)
+ggplot(virospore_MOI, aes(x = factor(MOI), y = Entrapment_Efficiency)) +
+  geom_boxplot() +
+  stat_compare_means(method = "kruskal.test") +
+  stat_compare_means(comparisons = list(c("0.001", "0.01")),
+                     method = "dunn.test",
+                     label = "p.signif")
+
+```
 
 ```{r}
 # testing for correlation?
 cor.test(virospore_MOI$MOI, virospore_MOI$Entrapment_Efficiency, method = "spearman")  # Use Spearman for non-linear relationships
+
 
 ```
 ```{r}
@@ -68,9 +79,56 @@ summary_stats <- virospore_MOI %>%
 # Bar plot
 ggplot(summary_stats, aes(x = factor(MOI), y = mean)) +
   geom_bar(stat = "identity", fill = "steelblue", color = "black", width = 0.6) +
-  geom_errorbar(aes(ymin = mean - se, ymax = mean + se), width = 0.2) +
+  #geom_errorbar(aes(ymin = mean - se, ymax = mean + se), width = 0.2) +
+  stat_compare_means(method = "kruskal.test") +
+  stat_compare_means(comparisons = list(c("0.001", "0.01")),
+                     method = "dunn.test",
+                     label = "p.signif")
   scale_y_log10() +
   theme_minimal() +
+  labs(y = "Mean Entrapment Efficiency (%)", x = "MOI") +
+  theme(text = element_text(size = 14))
+
+```
+```{r}
+library(ggplot2)
+library(ggpubr)
+
+
+
+
+# Bar plot
+ggplot(summary_stats, aes(x = factor(MOI), y = mean)) +
+  geom_bar(stat = "identity", fill = "steelblue", color = "black", width = 0.6) +
+  # Add error bars if you want:
+  # geom_errorbar(aes(ymin = mean - se, ymax = mean + se), width = 0.2) +
+  #
+  #stat_compare_means(comparisons = list(c("0.001", "0.01")),
+                     #method = "t.test",
+                     #label = "p.signif") +
+  scale_y_log10() +  # <--- you were missing this plus sign!
+  theme_classic() +
+  labs(y = "Mean Entrapment Efficiency (%)", x = "MOI") +
+  theme(text = element_text(size = 14))
+
+```
+```{r}
+# Plotting to show significance 
+# #ggplot(summary_stats, aes(x = factor(MOI), y = mean)) +
+#   geom_bar(stat = "identity", fill = "steelblue", color = "black", width = 0.6)+
+#   scale_y_log10() +  
+#   theme_classic() +
+#   labs(y = "Mean Entrapment Efficiency (%)", x = "MOI") +
+#   theme(text = element_text(size = 14)) +
+#   showSignificance(c(1,2), 10.75, -0.25, "***")
+# library(ggsignif)
+
+ggplot(summary_stats, aes(x = factor(MOI), y = mean)) +
+  geom_bar(stat = "identity", fill = "steelblue", color = "black", width = 0.6) +
+  scale_y_log10() +
+  geom_signif(comparisons = list(c("0.001", "0.01")),
+              annotations = "*", y_position = 10.75, tip_length = 0.03) +
+  theme_classic() +
   labs(y = "Mean Entrapment Efficiency (%)", x = "MOI") +
   theme(text = element_text(size = 14))
 
