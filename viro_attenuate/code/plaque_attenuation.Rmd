@@ -1,0 +1,113 @@
+---
+title: "Plaque attenuation analysis"
+author: "Joy O'Brien"
+date: "2025-04-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+setwd("~/GitHub/VirosporeQuant/viro_attenuate")
+```
+
+```{r}
+# Load data
+atten <- read.csv("~/GitHub/VirosporeQuant/viro_attenuate/data/SPO1_attenuate.csv", header = TRUE, sep = ",", na.strings = "N/A")
+```
+
+```{r}
+# Look at the data
+hist(atten$Diameter_cm)
+```
+```{r}
+# Box plot of pre and post diameters
+library(ggplot2)
+
+ggplot(atten, aes(x = pre_post_entrapment, y = Diameter_cm)) +
+  geom_boxplot() +
+  theme_classic() +
+  xlab("Passage type") +
+  ylab("Plaque diameter (cm)") +
+  theme(text = element_text(size = 16))
+
+
+ggplot(atten, aes(x = pre_post_entrapment, y = Diameter_cm, fill = pre_post_entrapment)) +
+  geom_boxplot() +
+  theme_classic() +
+  xlab("Passage type") +
+  ylab("Plaque diameter (cm)") +
+  theme(text = element_text(size = 16))
+
+
+
+```
+```{r}
+# Re order pre and post
+
+# Define the desired order of categories
+desired_order <- c("pre", "post")
+
+# Reorder the factor levels
+atten$pre_post_entrapment <- factor(atten$pre_post_entrapment, levels = desired_order)
+
+# Create the box plot
+ggplot(atten, aes(x = pre_post_entrapment, y = Diameter_cm, fill = pre_post_entrapment)) +
+  geom_boxplot() +
+  theme_classic() +
+  xlab("Passage type") +
+  ylab("Plaque diameter (cm)") +
+  theme(text = element_text(size = 16))
+
+```
+```{r}
+library(dplyr)
+
+# Calculate mean size for each treatment
+atten %>%
+  group_by(pre_post_entrapment) %>%
+  summarise(mean_size = mean(Diameter_cm, na.rm = TRUE))
+
+# Calculating percent reduction in plaque size
+library(dplyr)
+
+# Get means
+mean_sizes <- atten %>%
+  group_by(pre_post_entrapment) %>%
+  summarise(mean_size = mean(Diameter_cm, na.rm = TRUE)) %>%
+  pivot_wider(names_from = pre_post_entrapment, values_from = mean_size)
+
+# Calculate percent change
+percent_change <- ((mean_sizes$post - mean_sizes$pre) / mean_sizes$pre) * 100
+
+cat("Percent change in mean plaque size:", round(percent_change, 2), "%\n")
+
+
+```
+
+```{r}
+# Is there a significant difference between pre and post?
+
+# First check to see if the data is normal 
+shapiro.test(atten$Diameter_cm) # no not at all 
+
+wilcox.test(Diameter_cm ~ pre_post_entrapment, data = atten)
+
+library(tidyr)
+library(dplyr)
+
+# Pivot to wide format
+df_wide <- atten %>%
+  pivot_wider(names_from = pre_post_entrapment, values_from = Diameter_cm)
+
+# Calculate percent decrease
+df_wide <- df_wide %>%
+  mutate(percent_decrease = ((pre - post) / pre) * 100)
+
+# Calculate average percent decrease
+avg_decrease <- mean(df_wide$percent_decrease, na.rm = TRUE)
+
+cat("Average percent decrease in plaque size:", round(avg_decrease, 2), "%\n")
+
+summary(atten$pre_post_entrapment == "pre")
+
+```
+
