@@ -1,0 +1,100 @@
+---
+title: "SPO1_mutant_wildtype_annulus"
+author: "Joy O'Brien"
+date: "2025-08-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+setwd("~/GitHub/VirosporeQuant/SPO1_mutant")
+```
+0. Set plot theme
+```{r}
+library(paletteer)
+library(ggplot2)
+theme_set(theme_classic() +
+  theme(axis.title = element_text(size = 16),
+        axis.title.x = element_text(margin = margin(t = 15, b = 15)),
+        axis.title.y = element_text(margin = margin(l = 15, r = 15)),
+        axis.text = element_text(size = 13),
+        axis.text.x = element_text(margin = margin(t = 5)),
+        axis.text.y = element_text(margin = margin(r = 5)),
+        #axis.line.x = element_line(linewidth = 1),
+        #axis.line.y = element_line(linewidth = 1),
+        axis.ticks.y.right = element_line(linewidth = 1),
+        axis.text.y.right = element_text(size = 13, margin = margin(l = 5)),
+        axis.line.y.right = element_line(linewidth = 0.1),
+        axis.ticks.x.top = element_line(linewidth = 1),
+        axis.text.x.top = element_text(size = 13, margin = margin(b = 5)),
+        axis.line.x.top = element_line(linewidth = 0.1),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_line(linewidth = 1),
+        axis.ticks.y = element_line(linewidth = 1),
+        axis.ticks.length = unit(.1, "in"),
+        panel.border = element_rect(color = "grey20", fill = NA, linewidth = 1.5),
+        legend.text = element_text(size = 14),
+        strip.text = element_text(size = 14),
+        strip.background = element_blank()
+        )) 
+colors <-paletteer_d("ggthemes::Miller_Stone")
+```
+
+
+1. Load libraries
+```{r}
+# Load Library
+library(readxl)
+library(dplyr)
+library(tidyr)  
+library(vegan)
+library(ggplot2)
+library(mgcv)
+
+```
+
+2. Load data
+```{r}
+data <- read_excel("~/GitHub/VirosporeQuant/SPO1_mutant/Data/20250819_1900_SPO1WTmutant_annulus_data.xlsx", sheet = "annulus_data")
+```
+
+3. Account for the dilutions performed and the stock
+```{r}
+# Calculate vPFU of the original suspension which is # of PFU or CFU / vol plated x total dilution factor
+data$vPFU_mL_2 <- data$vPFU_10e2/ (0.1 * (10^-2))
+# Accounting for the stock amount (the amount of liquid that the virospores were deposited into in mL)
+data$vPFU_stock <- data$vPFU_mL_2 * 0.2
+```
+
+4. Account for the area sampled 
+
+```{r}
+# Calculate per area for virospores
+data$vPFU_cm2 <- data$vPFU_stock / (0.00785)
+```
+
+5. Plot via box plot
+```{r}
+library(ggplot2)
+data$Genotype <- factor(data$Genotype, levels = c("wildtype", "mutant"))
+# boxplot of vPFU_cm2 grouped by Genotype
+ggplot(data, aes(x = Genotype, y = vPFU_cm2, fill = Genotype)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, alpha = 0.7) + # add points
+  labs(
+    title = "",
+    x = "Genotype",
+    y = "vPFU per cm²"
+  )
+
+```
+6. Test for difference?
+```{r}
+# Running stats test
+# Check to see if data is normal 
+shapiro.test(data$vPFU_cm2) #p value = 0.02 indicating that data is normally distributed
+t.test(vPFU_cm2 ~ Genotype, data = data)
+```
+
+
+
