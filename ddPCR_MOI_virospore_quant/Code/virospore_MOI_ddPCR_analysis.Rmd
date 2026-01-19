@@ -10,23 +10,199 @@ output: html_document
 setwd("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant")
 ```
 
+
+
+0. Set Theme
+```{r}
+
+library(paletteer)
+library(ggplot2)
+theme_set(theme_classic() +
+  theme(axis.title = element_text(size = 16),
+        axis.title.x = element_text(margin = margin(t = 15, b = 15)),
+        axis.title.y = element_text(margin = margin(l = 15, r = 15)),
+        axis.text = element_text(size = 13),
+        axis.text.x = element_text(margin = margin(t = 5)),
+        axis.text.y = element_text(margin = margin(r = 5)),
+        #axis.line.x = element_line(linewidth = 1),
+        #axis.line.y = element_line(linewidth = 1),
+        axis.ticks.y.right = element_line(linewidth = 1),
+        axis.text.y.right = element_text(size = 13, margin = margin(l = 5)),
+        axis.line.y.right = element_line(linewidth = 0.1),
+        axis.ticks.x.top = element_line(linewidth = 1),
+        axis.text.x.top = element_text(size = 13, margin = margin(b = 5)),
+        axis.line.x.top = element_line(linewidth = 0.1),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_line(linewidth = 1),
+        axis.ticks.y = element_line(linewidth = 1),
+        axis.ticks.length = unit(.1, "in"),
+        panel.border = element_rect(color = "grey20", fill = NA, linewidth = 1.5),
+        legend.text = element_text(size = 14),
+        strip.text = element_text(size = 14),
+        strip.background = element_blank()
+        )) 
+colors <-paletteer_d("ggthemes::Miller_Stone")
+```
+
+1. Load data
 ```{r}
 # Load data
-virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Data/20250306_SPO1_Delta6_MOI_ddPCR.csv")
+# Previous data
+#virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Data/20250306_SPO1_Delta6_MOI_ddPCR.csv")
+
+virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Data/20251015_1536_SPO1_Delta6_MOI_2_20250918_092121_473.csv")
 ```
 
+2. Calculate entrapment efficiency
 ```{r}
 # Calculate entrapment efficiency for each replicate sample
-virospore_MOI$Entrapment_Efficiency <- (virospore_MOI$SPO1_Copy_copies_ul / virospore_MOI$Bacillus_Copy) * 100
+# Previous data
+# virospore_MOI$Entrapment_Efficiency <- (virospore_MOI$SPO1_Copy_copies_ul / virospore_MOI$Bacillus_Copy) * 100
 
+
+virospore_MOI$Entrapment_Efficiency <- (virospore_MOI$SPO1_copy_ul / virospore_MOI$Bacillus_copy_ul) * 100
 ```
 
+3. Initial data look
 ```{r}
-# Load libraries
-library(dunn.test)
-# Stats comparing entrapment efficieny at different MOI
-# Check normality
-shapiro.test(virospore_MOI$Entrapment_Efficiency) # based on this the data is not normally distributed
+library(dplyr)
+# Let's remove all NA's
+virospore_MOI <- virospore_MOI %>%
+  mutate(MOI = as.numeric(MOI)) %>%
+  filter(!is.na(SPO1_copy_ul),
+         !is.na(Bacillus_copy_ul),
+         !is.na (Entrapment_Efficiency))
+
+# Look at the data structure (following QB packet week 1)
+str(virospore_MOI)
+
+# Looking for any correlations among variables, but first index the data
+viro.num <- virospore_MOI[ c(3, 7)]
+pairs(viro.num)
+
+# Perform a correlation test
+cor1 <- cor(viro.num)
+summary(cor1)
+print(cor1)
+
+
+lm.model <- lm(Entrapment_Efficiency ~ MOI, data = virospore_MOI)
+summary(lm.model)
+
+plot(virospore_MOI$Entrapment_Efficiency, virospore_MOI$MOI, ylim = c(0,100), xlim = c(0, 10),
+     xlab = "MOI",
+     ylab = "Entrapment Efficiency (%)")
+
+
+# Skipping ahead to see if data fits the assumptions of linear regression
+# First we need to look at the residuals (observed - predicted) to see if data meets assumptions
+# Residuals need to be normally distributed and of equal variance
+plot(fitreg)   
+
+# Let's log10 transform and then check again 
+virospore_MOI$log10_Entrapment_Efficiency <- log10(virospore_MOI$Entrapment_Efficiency)
+
+log10.lm.model <- lm(log10_Entrapment_Efficiency ~ MOI, data = virospore_MOI)
+summary(log10.lm.model)
+plot(log10.lm.model)
+
+plot(virospore_MOI$Entrapment_Efficiency, virospore_MOI$MOI, ylim = c(0,100), xlim = c(0, 10),
+     xlab = "MOI",
+     ylab = "Entrapment Efficiency (%)") +
+    scale_x_log10(
+    limits = c(1e-5, 10),
+    breaks = 10^seq(-5, 1, by = 1),
+    labels = scales::label_scientific()
+  )
+# Comparing models
+# Non-log10 transformed (y axis) and log10 transformed
+AIC(log10.lm.model)
+AIC(lm.model)
+BIC(log10.lm.model)
+BIC(lm.model)
+
+# Beta regression?
+library(betareg)
+bm <- betareg(Entrapment_Efficiency ~ MOI, data = virospore_MOI) # no 
+
+# Gamma
+gm <- glm(Entrapment_Efficiency ~ MOI, family = Gamma(link = "log"), data = virospore_MOI)
+summary(gm)
+AIC(lm.model, gm)
+BIC(lm.model, gm)
+summary(gm)$dispersion
+plot(gm)
+
+# Plotting this model, creating predictions
+# Generate a sequence of MOI values across your data range
+newdat <- data.frame(
+  MOI = seq(min(virospore_MOI$MOI, na.rm = TRUE),
+            max(virospore_MOI$MOI, na.rm = TRUE),
+            length.out = 100)
+)
+
+# Predict on the link (log) scale, include SEs
+pred <- predict(gm, newdata = newdat, type = "link", se.fit = TRUE)
+
+# Convert back to the response (original) scale
+newdat <- cbind(newdat, pred)
+newdat <- newdat |>
+  dplyr::mutate(
+    fit = exp(fit),
+    lwr = exp(fit - 1.96 * se.fit),
+    upr = exp(fit + 1.96 * se.fit)
+  )
+library(ggplot2)
+
+ggplot(virospore_MOI, aes(x = MOI, y = Entrapment_Efficiency)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_line(data = newdat, aes(y = fit), color = "blue", linewidth = 1.2) +
+  geom_ribbon(data = newdat, aes(ymin = lwr, ymax = upr), alpha = 0.2, fill = "blue") +
+  scale_x_log10(
+    limits = c(1e-5, 10),
+    breaks = 10^seq(-5, 1, 1),
+    labels = scales::label_scientific()
+  ) +
+  labs(
+    x = "MOI",
+    y = "Entrapment Efficiency (%)",
+    title = "Gamma GLM fit with log link"
+  ) 
+# Plotting gamma 
+ggplot(virospore_MOI, aes(x = MOI, y = Entrapment_Efficiency)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_line(
+    data = newdat,
+    aes(x = MOI, y = fit),
+    color = "blue",
+    linewidth = 1.2,
+    inherit.aes = FALSE
+  ) +
+  geom_ribbon(
+    data = newdat,
+    aes(x = MOI, ymin = 0, ymax = 120),
+    alpha = 0.2,
+    fill = "gray",
+    inherit.aes = FALSE
+  ) +
+   scale_x_log10(
+     limits = c(1e-5, 10),
+     breaks = 10^seq(-5, 1, 1),
+     labels = scales::label_scientific()
+  ) +
+  labs(
+    x = "MOI",
+    y = "Entrapment Efficiency (%)",
+    title = "Gamma GLM"
+  )
+
+
+# Separate troubleshooting
+# Is the data normally distributed? 
+library(dunn.test) # load library
+shapiro.test(virospore_MOI$Entrapment_Efficiency) #data is not normally distrubuted
+shapiro.test(virospore_MOI$MOI) # not normally distributed
 
 # Perform Kruskal-Wallis because the data is not normally distributed
 kruskal.test(Entrapment_Efficiency ~ factor(MOI), data = virospore_MOI)
@@ -34,14 +210,16 @@ kruskal.test(Entrapment_Efficiency ~ factor(MOI), data = virospore_MOI)
 # Post-hoc for Kruskal
 dunn.test(virospore_MOI$Entrapment_Efficiency, virospore_MOI$MOI, method = "bonferroni")
 ```
+4. Boxplot
 ```{r}
+# Looking at data initially
 library(ggpubr)
 ggplot(virospore_MOI, aes(x = factor(MOI), y = Entrapment_Efficiency)) +
-  geom_boxplot() +
-  stat_compare_means(method = "kruskal.test") +
-  stat_compare_means(comparisons = list(c("0.001", "0.01")),
-                     method = "dunn.test",
-                     label = "p.signif")
+  geom_boxplot() #+
+  # stat_compare_means(method = "kruskal.test") +
+  # stat_compare_means(comparisons = list(c("0.001", "0.01")),
+  #                    method = "dunn.test",
+  #                    label = "p.signif")
 
 ```
 
@@ -49,8 +227,8 @@ ggplot(virospore_MOI, aes(x = factor(MOI), y = Entrapment_Efficiency)) +
 # testing for correlation?
 cor.test(virospore_MOI$MOI, virospore_MOI$Entrapment_Efficiency, method = "spearman")  # Use Spearman for non-linear relationships
 
-
 ```
+
 ```{r}
 # Visualize entrapment efficiency via box plot
 ggplot(virospore_MOI, aes(x = factor(MOI), y = Entrapment_Efficiency, fill = factor(MOI))) +
@@ -60,6 +238,445 @@ ggplot(virospore_MOI, aes(x = factor(MOI), y = Entrapment_Efficiency, fill = fac
   scale_y_log10() + # Log transform y axis
   labs(y = "Entrapment Efficiency (%)", x = "MOI") +
   theme(legend.position = "none")
+
+```
+5. Poisson model
+```{r}
+# Poisson relies on count data
+# Okay instead of using the entrapment efficiency as a percent, we probably shouldnt
+virospore_MOI$Entrapment_Efficiency_count <- (virospore_MOI$SPO1_copy_ul / virospore_MOI$Bacillus_copy_ul)
+
+# Poisson model
+library(tidyverse)
+# This should be visualized as a regression
+virospore_MOI <- virospore_MOI %>%
+  rename(Entrapment_Efficiency = Entrapment_Efficiency) %>%
+  mutate(
+    Rep = as.factor(Rep),
+    MOI = as.numeric(MOI)
+  )
+
+# Starting without any transformations
+p.model <- glm(Entrapment_Efficiency_count_adj ~ MOI, data = virospore_MOI, family = "poisson")
+summary(p.model)
+plot(p.model)
+1 - pchisq(656.46, df = 19)
+BIC(p.model) # returns inf # if quasipoisson returns NA
+AIC(p.model) # returns inf # if quasipoisson returns NA
+summary(virospore_MOI$Entrapment_Efficiency_count_adj)
+table(virospore_MOI$Entrapment_Efficiency_count_adj)
+
+
+# now re-running #currently running binomial
+count.p.model <- glm(Entrapment_Efficiency_count_adj_log10 ~ MOI, data = virospore_MOI, family = "binomial")
+summary(count.p.model)
+AIC(count.p.model) #inf
+BIC(count.p.model) #inf
+
+# Rescaling entrap efficiency to avoid 0
+virospore_MOI <- virospore_MOI %>%
+  mutate(Entrapment_Efficiency_count_adj = Entrapment_Efficiency_count + 1)
+# now re-running
+adj.count.p.model <- glm(Entrapment_Efficiency_count_adj ~ MOI, data = virospore_MOI, family = "poisson")
+summary(adj.count.p.model)
+AIC(adj.count.p.model) #inf
+BIC(adj.count.p.model) #inf
+
+# Log transforming predictor variable to see if that changes anything
+virospore_MOI$log10_MOI <- log10(virospore_MOI$MOI)
+virospore_MOI$log_MOI <- log(virospore_MOI$MOI)
+
+#Re-running poisson with predictor transformed
+log10x.p.model<- glm(Entrapment_Efficiency_count_adj ~ log_MOI, data = virospore_MOI, family = "poisson")
+
+AIC(log10x.p.model) # also returns inf # if quasi returns NA
+BIC(log10x.p.model) # also returns inf # if quasi reutnrs NA
+
+# Re-scaling entrapment efficiency to avoid 0
+
+virospore_MOI <- virospore_MOI %>%
+  mutate(Entrapment_Efficiency_adj = Entrapment_Efficiency + 1)
+
+r1.p.model <- glm(Entrapment_Efficiency_adj ~ MOI, data = virospore_MOI, family = "poisson")
+summary(r1.p.model)
+AIC(r1.p.model) # also inf # quasi returns na
+BIC(r1.p.model) # also inf # quasi returns na
+
+log10x.r1.p.model <- glm(Entrapment_Efficiency_count ~ log10_MOI, data = virospore_MOI, family = "poisson")
+
+AIC(log10x.r1.p.model) # inf # quasi returns NA
+BIC(log10x.r1.p.model) # inf # quasi returns NA
+
+# Not really supposed to log transform response but going to in addition to adding 1
+virospore_MOI <- virospore_MOI %>%
+  mutate(Entrapment_Efficiency_count_adj_log10 = log10(Entrapment_Efficiency_count_adj))
+
+logboth.r1.p.model <-glm(Entrapment_Efficiency_adj_log10 ~ log10_MOI, data = virospore_MOI, family = "poisson")
+AIC(logboth.r1.p.model)                        
+                         
+virospore_MOI <- virospore_MOI %>%
+  mutate(log10_Entrapment_Efficiency_adj = log10_Entrapment_Efficiency + 1)
+
+# okay
+p.model <- glm(Entrapment_Efficiency_count ~ MOI, data = virospore_MOI, family = "poisson")
+log.p.model <- glm(log10_Entrapment_Efficiency_adj ~ MOI, data = virospore_MOI, family = "poisson")
+# okay so these models break, let's add +1 to the entrapment efficiency and reevaluate
+# turns out that it's not good to log10 transform the response variable when plotting with poisson
+
+# Let's log10 the predictor and then re-run the model
+
+
+AIC(p.model)
+BIC(p.model)
+
+install.packages("nlme")
+library(nlme)
+logLik(p.model)
+
+ggplot(virospore_MOI, aes(x = MOI, y = Entrapment_Efficiency)) +
+  geom_point(position = position_jitter(height = 0.05), alpha = 0.6) +
+  geom_smooth(method = "glm",
+              method.args = list(family = poisson()),  # or binomial() ifproportions
+              se = TRUE,
+              color = "blue") +
+  labs(
+    title = "",
+    x = "MOI",
+    y = "Entrapment Efficiency (%)"
+  ) +
+  scale_x_log10(
+    limits = c(1e-5, 10),
+    breaks = 10^seq(-5, 1, by = 1),
+    labels = scales::label_scientific()
+  )
+
+# AIC and BIC for poisson
+AIC(p.model)
+BIC(p.model)
+
+
+
+# ggplot(d, aes(x = MOI, y = Entrapment_Efficiency)) +
+#   geom_point(position = position_jitter(height = 0.05), alpha = 0.6) + # Add jitter for binary data
+#   geom_smooth(method = "glm", method.args = list(family = binomial(), se = TRUE, color = "blue") +
+#   labs(title = "",
+#        x = "MOI",
+#        y = "Entrapment Efficiency (%)") +
+#   theme_minimal()
+
+```
+
+```{r}
+# Exponential? 
+
+```
+
+Now let's do linear regression
+```{r}
+# Linear model
+library(dplyr)
+library(ggplot2)
+
+# Plot with regression lines by MOI
+ggplot(d, aes(x = MOI, y = Entrapment_Efficiency)) +
+  geom_smooth(method = "lm", se = TRUE, linetype = "solid", size = 1, colour = "black") +
+    geom_point(shape = 1, size = 3) +
+  labs(
+    title = "",
+    x = "MOI",
+    y = "Entrapment Efficiency (%)"
+  ) + 
+   labs(
+    title = "",
+    x = "MOI",
+    y = "Entrapment Efficiency (%)"
+  ) +
+  scale_x_log10(
+    limits = c(1e-5, 10),
+    breaks = 10^seq(-5, 1, by = 1),
+    labels = scales::label_scientific()
+  )
+
+
+
+```
+
+```{r}
+model <- lm(Entrapment_Efficiency ~ MOI, data = d)
+summary(model)
+
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Fit a linear model per treatment and get predicted values + CI
+library(broom)
+
+# Create predictions manually
+predicted_df <- phage_data %>%
+  group_by(Treatment) %>%
+  do({
+    model <- lm(int.val.cor ~ Time_infect, data = .)
+    preds <- predict(model, interval = "confidence", level = 0.95)
+    cbind(., preds)
+  })
+ggplot(predicted_df, aes(x = Time_infect, y = fit, color = Treatment)) +
+  geom_point(aes(y = int.val.cor)) +  # Original data
+  geom_line() +                       # Fitted line
+  geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.3) +
+  labs(
+    title = "",
+    x = "Time of Infection (hours)",
+    y = "Virulence (corrected)"
+  ) 
+
+# Calculate confidence intervals
+# Create predictions manually
+predicted_d <- d %>%
+  do({
+    model <- lm(Entrapment_Efficiency ~ MOI, data = .)
+    preds <- predict(model, interval = "confidence", level = 0.95)
+    cbind(., preds)
+  })
+ggplot(predicted_d, aes(x = MOI, y = fit)) +
+  geom_point(aes(y = Entrapment_Efficiency)) +  # Original data
+  geom_line() +                       # Fitted line
+  geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.3) +
+  labs(
+    title = "",
+    x = "MOI",
+    y = "Entrapment Efficiency (%)"
+  ) +
+  scale_x_log10(
+    limits = c(1e-5, 10),
+    breaks = 10^seq(-5, 1, by = 1),
+    labels = scales::label_scientific()
+  )
+
+
+
+# 
+library(dplyr)
+library(ggplot2)
+
+# d has columns: SampleID, MOI, Entrapment_Efficiency
+summ <- d %>%
+  group_by(Sample, MOI) %>%
+  summarise(
+    y = mean(Entrapment_Efficiency, na.rm = TRUE),
+    sd = sd(Entrapment_Efficiency, na.rm = TRUE),
+    n  = n(),
+    se = sd / sqrt(n),
+    tcrit = qt(0.975, df = pmax(n - 1, 1)),
+    ymin = y - tcrit * se,
+    ymax = y + tcrit * se,
+    .groups = "drop"
+  )
+
+ggplot(summ, aes(MOI, y)) +
+  geom_point(size = 3, shape = 1) +
+  geom_errorbar(aes(ymin = ymin, ymax = ymax), width = 0.05) +
+  scale_x_log10(limits = c(1e-5, 10),
+                breaks = 10^seq(-5, 1, 1),
+                labels = scales::label_scientific()) +
+  labs(x = "MOI", y = "Entrapment Efficiency (%)") +
+  theme_minimal()
+
+# As count
+# d has: MOI, count
+pois_ci <- function(x, conf = 0.95) {
+  est <- x
+  lwr <- qchisq((1 - conf)/2, 2 * x) / 2
+  upr <- qchisq(1 - (1 - conf)/2, 2 * (x + 1)) / 2
+  data.frame(count = est, ymin = lwr, ymax = upr)
+}
+
+d_ci <- d %>%
+  rowwise() %>%
+  mutate(tmp = list(pois_ci(count))) %>%
+  tidyr::unnest(tmp) %>%
+  ungroup()
+
+ggplot(d_ci, aes(MOI, count)) +
+  geom_point(shape = 1, size = 3) +
+  geom_errorbar(aes(ymin = ymin, ymax = ymax), width = 0.05) +
+  scale_x_log10(limits = c(1e-5, 10),
+                breaks = 10^seq(-5, 1, 1),
+                labels = scales::label_scientific()) +
+  labs(x = "MOI", y = "Count") +
+  theme_minimal()
+
+```
+
+Remove hour 0 outliers and replot
+```{r}
+phage.data.rm <- phage_data[-c(1, 21), ]
+
+
+# Fit a linear model per treatment and get predicted values + CI
+library(broom)
+
+# Create predictions manually
+predicted_df.rm <- phage.data.rm %>%
+  group_by(Treatment) %>%
+  do({
+    model <- lm(int.val.cor ~ Time_infect, data = .)
+    preds <- predict(model, interval = "confidence", level = 0.95)
+    cbind(., preds)
+  })
+ggplot(predicted_df.rm, aes(x = Time_infect, y = fit, color = Treatment)) +
+  geom_point(aes(y = int.val.cor)) +  # Original data
+  geom_line() +                       # Fitted line
+  geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.3) +
+  labs(
+    title = "",
+    x = "Time of Infection (hours)",
+    y = "Virulence (corrected)"
+  ) 
+```
+
+
+```{r}
+lm.model <- lm(int.val.cor ~ Time_infect * Treatment, data = phage.data.rm)
+summary(lm.model)
+```
+
+
+
+
+
+
+
+```{r}
+# Testing for stochastic or deterministic (?)
+d <- virospore_MOI
+d <- d %>%
+  rename(Entrapment_Efficiency = Entrapment_Efficiency) %>%
+  mutate(
+    Rep = as.factor(Rep),
+    MOI = as.numeric(MOI)
+  )
+
+d <- d %>%
+  mutate(MOI = as.numeric(MOI)) %>%
+  filter(!is.na(SPO1_copy_ul),
+         !is.na(Bacillus_copy_ul),
+         !is.na (Entrapment_Efficiency))
+
+library(tidyverse)
+library(minpack.lm)  # for nlsLM
+
+# d should have columns: MOI (numeric), y (Entrapment_Efficiency as numeric)
+d <- d %>%
+  mutate(MOI = as.numeric(MOI),
+         y   = as.numeric(Entrapment_Efficiency)) %>%
+  filter(is.finite(MOI), is.finite(y), MOI > 0, y >= 0)
+
+stopifnot(nrow(d) > 3)  # need at least a few points
+
+max_y   <- max(d$y, na.rm = TRUE)
+med_MOI <- median(d$MOI, na.rm = TRUE)
+
+start_hill <- list(pmax = max_y * 0.9, K = med_MOI, h = 1)
+
+m_hill <- nlsLM(
+  y ~ pmax * MOI^h / (K^h + MOI^h),
+  data = d,
+  start = start_hill,
+  lower = c(pmax = 0,          K = min(d$MOI)*0.1, h = 0.1),
+  upper = c(pmax = max_y*10,   K = max(d$MOI)*10,  h = 10),
+  control = nls.lm.control(maxiter = 200, ftol = 1e-12, ptol = 1e-12)
+)
+
+summary(m_hill)
+
+
+# Compare fits
+AIC(m_neutral, m_hill)
+
+# Visualize
+nd <- tibble(MOI = seq(min(d$MOI), max(d$MOI), length.out = 200))
+pred_neutral <- predict(m_neutral, newdata = nd)
+pred_hill    <- predict(m_hill,    newdata = nd)
+
+ggplot(d, aes(MOI, y)) +
+  geom_point() +
+  geom_line(aes(y = pred_neutral), data = mutate(nd, pred_neutral), linetype = 2) +
+  geom_line(aes(y = pred_hill),    data = mutate(nd, pred_hill)) +
+  scale_x_log10() +
+  labs(x="MOI", y="Entrapment efficiency",
+       title="Neutral (dashed) vs Deterministic Hill (solid)")
+
+###
+library(tidyverse)
+library(minpack.lm)
+
+# --- Prep ---
+d <- d %>%
+  mutate(MOI = as.numeric(MOI),
+         y   = as.numeric(Entrapment_Efficiency)) %>%
+  filter(is.finite(MOI), is.finite(y), MOI > 0, y >= 0)
+
+stopifnot(nrow(d) > 3)
+
+max_y   <- max(d$y, na.rm = TRUE)
+med_MOI <- median(d$MOI, na.rm = TRUE)
+
+# --- Neutral (scaled complementary-exponential): y = a * (1 - exp(-b*MOI)) ---
+m_neutral <- nlsLM(
+  y ~ a * (1 - exp(-b * MOI)),
+  data = d,
+  start = list(a = max_y * 0.9, b = 0.1),
+  lower = c(a = 0, b = 1e-6),
+  upper = c(a = max_y * 10, b = 1e3),
+  control = nls.lm.control(maxiter = 200)
+)
+
+# --- Deterministic Hill: y = pmax * MOI^h / (K^h + MOI^h) ---
+start_hill <- list(pmax = max_y * 0.9, K = med_MOI, h = 1)
+m_hill <- nlsLM(
+  y ~ pmax * MOI^h / (K^h + MOI^h),
+  data = d,
+  start = start_hill,
+  lower = c(pmax = 0,          K = min(d$MOI)*0.1, h = 0.1),
+  upper = c(pmax = max_y*10,   K = max(d$MOI)*10,  h = 10),
+  control = nls.lm.control(maxiter = 200, ftol = 1e-12, ptol = 1e-12)
+)
+
+summary(m_neutral)
+summary(m_hill)
+
+# --- Compare fits ---
+aics <- AIC(m_neutral, m_hill)
+aics
+delta <- aics$AIC - min(aics$AIC)
+weights <- exp(-0.5 * delta) / sum(exp(-0.5 * delta))
+cbind(aics, deltaAIC = delta, weight = weights)
+
+# --- Predictions for plotting ---
+nd <- tibble(MOI = seq(min(d$MOI), max(d$MOI), length.out = 200))
+nd$pred_neutral <- predict(m_neutral, newdata = nd)
+nd$pred_hill    <- predict(m_hill,    newdata = nd)
+
+# --- Plot ---
+ggplot(d, aes(MOI, y)) +
+  geom_point(size = 2) +
+  geom_line(data = nd, aes(MOI, pred_neutral), linetype = 2) +  # neutral (dashed)
+  geom_line(data = nd, aes(MOI, pred_hill)) +                   # hill (solid)
+  scale_x_log10() +
+  labs(x="MOI", y="Entrapment efficiency",
+       title="Neutral (dashed) vs Deterministic Hill (solid)") +
+  theme_classic()
+
+# --- Quick residual check (helpful tie-breaker) ---
+par(mfrow = c(1,2))
+plot(resid(m_neutral) ~ fitted(m_neutral)); abline(h=0, lty=2)
+title("Residuals: Neutral")
+plot(resid(m_hill) ~ fitted(m_hill)); abline(h=0, lty=2)
+title("Residuals: Hill")
+par(mfrow = c(1,1))
+
 
 ```
 
@@ -80,16 +697,23 @@ summary_stats <- virospore_MOI %>%
 ggplot(summary_stats, aes(x = factor(MOI), y = mean)) +
   geom_bar(stat = "identity", fill = "steelblue", color = "black", width = 0.6) +
   #geom_errorbar(aes(ymin = mean - se, ymax = mean + se), width = 0.2) +
-  stat_compare_means(method = "kruskal.test") +
-  stat_compare_means(comparisons = list(c("0.001", "0.01")),
-                     method = "dunn.test",
-                     label = "p.signif")
+  #stat_compare_means(method = "kruskal.test") +
+  #stat_compare_means(comparisons = list(c("0.001", "0.01")),
+                    # method = "dunn.test",
+                     #label = "p.signif")
   scale_y_log10() +
   theme_minimal() +
   labs(y = "Mean Entrapment Efficiency (%)", x = "MOI") +
   theme(text = element_text(size = 14))
 
 ```
+```{r}
+```
+
+
+```{r}
+```
+
 ```{r}
 library(ggplot2)
 library(ggpubr)
