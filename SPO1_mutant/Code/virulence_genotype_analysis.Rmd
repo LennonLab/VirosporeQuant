@@ -1,0 +1,1188 @@
+---
+title: "virulence_genotype_analysis"
+author: "Joy O'Brien"
+date: "2026-09-29"
+output: html_document
+---
+
+```{r}
+setwd("~/GitHub/VirosporeQuant/SPO1_mutant")
+```
+
+0. Load plot theme
+```{r}
+library(paletteer)
+library(ggplot2)
+theme_set(theme_classic() +
+  theme(axis.title = element_text(size = 16),
+        axis.title.x = element_text(margin = margin(t = 15, b = 15)),
+        axis.title.y = element_text(margin = margin(l = 15, r = 15)),
+        axis.text = element_text(size = 13),
+        axis.text.x = element_text(margin = margin(t = 5)),
+        axis.text.y = element_text(margin = margin(r = 5)),
+        #axis.line.x = element_line(linewidth = 1),
+        #axis.line.y = element_line(linewidth = 1),
+        axis.ticks.y.right = element_line(linewidth = 1),
+        axis.text.y.right = element_text(size = 13, margin = margin(l = 5)),
+        axis.line.y.right = element_line(linewidth = 0.1),
+        axis.ticks.x.top = element_line(linewidth = 1),
+        axis.text.x.top = element_text(size = 13, margin = margin(b = 5)),
+        axis.line.x.top = element_line(linewidth = 0.1),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_line(linewidth = 1),
+        axis.ticks.y = element_line(linewidth = 1),
+        axis.ticks.length = unit(.1, "in"),
+        panel.border = element_rect(color = "grey20", fill = NA, linewidth = 1.5),
+        legend.text = element_text(size = 14),
+        strip.text = element_text(size = 14),
+        strip.background = element_blank()
+        )) 
+colors <-paletteer_d("ggthemes::Miller_Stone")
+```
+
+1. Load data, fix time, remove lanes that don't have samples, and combine data (i.e., plate 2 is X time later after the latest reading of plate 1)
+```{r}
+library(readxl)
+library(lubridate)
+library(dplyr)
+library(tidyr)
+
+OD600 <- read_excel("~/GitHub/VirosporeQuant/SPO1_mutant/Data/20261002_mutant_virulence_curves_plate1.xlsx", sheet = "OD600_1")
+OD600_2 <- read_excel("~/GitHub/VirosporeQuant/SPO1_mutant/Data/20261002_mutant_virulence_curves_plate2.xlsx", sheet = "OD600_2")
+```
+
+2. Fix time column in data
+```{r}
+# Fix time so that it's represented as a decimal
+OD600 <- OD600 %>%
+  mutate(Time = hour(Time) + minute(Time)/60 + second(Time)/3600)
+OD600_2 <- OD600_2 %>%
+  mutate(Time = hour(Time) + minute(Time)/60 + second(Time)/3600)
+# Fix the time over 24 hrs in OD600_2
+  OD600_2 <- OD600_2 %>%
+  mutate(
+    Time = Time + cumsum(c(FALSE, diff(Time) < 0)) * 24
+  )
+# Shift data2 time and Combine data
+last.time <- max(OD600$Time, na.rm = TRUE)
+OD600_2 <- OD600_2 %>%
+  mutate(Time = Time + last.time)
+# Combine both OD600 tables (the reason there are 2 tables is because the experiment is stopped and re-started once phage is added)
+OD600_full <- bind_rows(OD600, OD600_2)
+# Remove temperature from data
+OD600_full <- OD600_full %>%
+  select(-Temp)
+# Remove lanes and wells that don't have samples 
+OD600_full <- OD600_full %>%
+  select(
+    -c(E1, F1, G1, H1),
+    -matches("(9|10|11|12)$")
+  )
+
+```
+
+3. Reshape data for initial plotting
+```{r}
+library(dplyr)
+library(tidyr)
+
+OD600_long <- OD600_full %>%
+  pivot_longer(
+    cols = -Time,
+    names_to = "Well",
+    values_to = "OD600"
+  )
+
+# Extract plate column number and assign treatments
+OD600_long <- OD600_long %>%
+  mutate(
+    Column = as.numeric(gsub("[A-H]", "", Well))
+  )
+
+OD600_long <- OD600_long %>%
+  mutate(
+    Treatment = case_when(
+      Column == 1 ~ "DSM control",
+      Column == 2 ~ "Control no phage",
+      Column == 3 ~ "Mutant MOI 0.1",
+      Column == 4 ~ "Mutant MOI 1",
+      Column == 5 ~ "Mutant MOI 10",
+      Column == 6 ~ "Wildtype MOI 0.1",
+      Column == 7 ~ "Wildtype MOI 1",
+      Column == 8 ~ "Wildtype MOI 10"
+    )
+  )
+
+# Also add the genotype data separately
+OD600_long <- OD600_long %>%
+  mutate(
+    Genotype = case_when(
+      Column %in% 3:5 ~ "mutant",
+      Column %in% 6:8 ~ "wildtype",
+      TRUE ~ "control"
+    ),
+    
+    MOI = case_when(
+      Column %in% c(3, 6) ~ 0.1,
+      Column %in% c(4, 7) ~ 1,
+      Column %in% c(5, 8) ~ 10,
+      TRUE ~ NA_real_
+    )
+  )
+# Add replicate information as well 
+
+OD600_long <- OD600_long %>%
+  group_by(Treatment) %>%
+  mutate(
+    Replicate = as.integer(factor(Well))
+  ) %>%
+  ungroup()
+```
+
+4. Blank corrections --> correct for background produced by media 
+```{r}
+OD_data_corrected <- OD600_long %>%
+  group_by(Time) %>%
+  mutate(blank_avg = mean(OD600[Treatment == "DSM control"], na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(OD600_corrected = OD600 - blank_avg)
+
+# Check the data 
+ggplot(OD_data_corrected, aes(x = Time, y = OD600_corrected, color = Treatment)) +
+  geom_point() + # Line plot for each sample # Optional: Points for each time point
+  #geom_point() +
+  labs(title = "",
+       x = "Time (hours)",
+       y = "OD600")
+
+```
+
+5. Plotting raw data for fun 
+```{r}
+# Create the plot
+library(ggplot2)
+ggplot(OD600_long, aes(x = Time, y = OD600, color = Treatment)) +
+  geom_point() + # Line plot for each sample # Optional: Points for each time point
+  #geom_point() +
+  labs(title = "",
+       x = "Time (hours)",
+       y = "OD600")
+```
+6. A quick check before averaging reps
+```{r}
+library(ggplot2)
+
+ggplot(
+  OD600_long,
+  aes(
+    x = Time,
+    y = OD600,
+    group = Well,
+    color = Treatment
+  )
+) +
+  geom_line(
+    alpha = 0.6,
+    linewidth = 0.6
+  ) +
+  labs(
+    x = "Time (h)",
+    y = expression(OD[600]),
+    color = "Treatment")
+```
+########## DATA TRUNCATION ###############
+APPROACH 1:
+- Drop control from dataset
+- Truncate the data for each replicate for each genotype based on global min following first global max
+- Calculate AUC (biomass loss)--this is not virulence
+- Correct for population specific adjustments
+
+```{r}
+OD600_long_nocontrol <- OD_data_corrected %>%
+  filter(Treatment != "Control no phage",
+         Treatment != "DSM control")
+```
+
+```{r}
+ #Function to identify first minimum after first maximum
+truncate_curve <- function(od) {
+
+  d <- diff(od)
+
+  if (length(d) == 0) {
+    return(seq_along(od))
+  }
+
+  # First maximum: OD600 starts decreasing
+  max_idx <- which(d < 0)[1]
+
+  if (is.na(max_idx)) {
+    return(seq_along(od))
+  }
+
+  # First minimum after maximum
+  after_max <- d[max_idx:length(d)]
+  stop_idx <- which(after_max >= 0)[1]
+
+  if (is.na(stop_idx)) {
+    min_idx <- length(od)
+  } else {
+    min_idx <- max_idx + stop_idx - 1
+  }
+
+  seq_len(min_idx)
+}
+
+# 1. Truncate data (no controls included)
+truncated_infected_min_app1 <- OD600_long_nocontrol %>%
+  group_by(Treatment, Genotype, MOI, Replicate, Well) %>%
+  arrange(Time, .by_group = TRUE) %>%
+  group_modify(~ .x[truncate_curve(.x$OD600_corrected), ]) %>%
+  ungroup()
+
+# Plot to double check that the correct thing was done 
+ggplot(
+  truncated_infected_min_app1,
+  aes(
+    x = Time,
+    y = OD600_corrected,
+    group = Well,
+    color = Treatment
+  )
+) +
+  geom_line(alpha = 0.7) +
+  facet_wrap(~ Treatment) +
+  labs(
+    x = "Time (h)",
+    y = expression(OD[600])
+  ) 
+
+
+```
+
+7. Calculate AUC for each genotype (so this is not actually virulence just a measure of biomass)
+```{r}
+library(DescTools)
+library(dplyr)
+
+library(dplyr)
+library(DescTools)
+
+
+infection_time <- 4.73
+
+auc_data_trunc_min_app1 <- truncated_infected_min_app1 %>%
+  filter(
+    Time >= infection_time,
+    Genotype %in% c("mutant", "wildtype")
+  ) %>%
+  group_by(Well, Treatment, Genotype, MOI, Replicate) %>%
+  arrange(Time, .by_group = TRUE) %>%
+  summarise(
+    AUC = if (n() >= 2) {
+      DescTools::AUC(
+        x = Time,
+        y = OD600_corrected,
+        method = "trapezoid"
+      )
+    } else {
+      NA_real_
+    },
+    start_time = min(Time),
+    end_time = max(Time),
+    duration = end_time - start_time,
+    .groups = "drop"
+  )
+
+auc_data_trunc_min_app1
+
+# Account for different truncation times between replicates
+auc_data_trunc_min_app1_normalized <- auc_data_trunc_min_app1 %>%
+  mutate(
+    mean_OD600 = AUC / duration
+  )
+
+# Plot to compare mutant and wildtpye (RAW)
+
+library(ggplot2)
+
+auc.fig_app1_raw <- ggplot(
+  auc_data_trunc_min_app1,
+  aes(
+    x = factor(MOI),
+    y = AUC,
+    fill = Genotype
+  )
+) +
+  geom_boxplot(
+    alpha = 0.6,
+    outlier.shape = NA,
+    position = position_dodge(width = 0.8)
+  ) +
+  geom_point(
+    aes(color = Genotype),
+    position = position_jitterdodge(
+      jitter.width = 0.1,
+      dodge.width = 0.8
+    ),
+    alpha = 0.7
+  ) +
+  scale_fill_manual(
+    values = c(
+      "wildtype" = "#638B66FF",
+      "mutant" = "#A2CEAAFF"
+    )
+  ) +
+  scale_color_manual(
+    values = c(
+      "wildtype" = "#638B66FF",
+      "mutant" = "#A2CEAAFF"
+    )
+  ) +
+  labs(
+    x = "Multiplicity of infection (MOI)",
+    y = expression(AUC~(OD[600] %.% h))
+  )
+
+auc.fig_app1_raw
+```
+
+8. Plot the same data but this time adjust for population specific truncations
+```{r}
+# Plot to compare mutant and wildtype (TIME ADJUSTED for each population)
+auc.fig.normalized_app1 <- ggplot(
+  auc_data_trunc_min_app1_normalized,
+  aes(
+    x = factor(MOI),
+    y = mean_OD600,
+    fill = Genotype
+  )
+) +
+  geom_boxplot(
+    alpha = 0.6,
+    outlier.shape = NA,
+    position = position_dodge(width = 0.8)
+  ) +
+  geom_point(
+    aes(color = Genotype),
+    position = position_jitterdodge(
+      jitter.width = 0.1,
+      dodge.width = 0.8
+    ),
+    alpha = 0.7
+  ) +
+  scale_fill_manual(
+    values = c(
+      "wildtype" = "#638B66FF",
+      "mutant" = "#A2CEAAFF"
+    )
+  ) +
+  scale_color_manual(
+    values = c(
+      "wildtype" = "#638B66FF",
+      "mutant" = "#A2CEAAFF"
+    )
+  ) +
+  labs(
+    x = "Multiplicity of infection (MOI)",
+    y = expression("Mean"~OD[600])
+  )
+
+auc.fig.normalized_app1
+  
+```
+############## APPROACH 2 #####################
+- Use blank corrected dataset and remove the DSM blanks from that dataset (keep non infected control so that we can calculate virulence)
+- Calculate virulence between genotypes relative to the control 
+- Correct for population specific adjustments 
+```{r}
+library(dplyr)
+library(DescTools)
+
+infection_time <- 4.73
+
+# 1. Mean blank-corrected control curve
+control_curve <- OD_data_corrected %>%
+  filter(Treatment == "Control no phage") %>%
+  group_by(Time) %>%
+  summarise(
+    control_OD600 = mean(OD600_corrected, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(Time)
+
+# 2. Calculate infected and time-matched control AUC
+auc_data_trunc_min.app2 <- truncated_infected_min_app1 %>%
+  filter(
+    Time >= infection_time,
+    Genotype %in% c("mutant", "wildtype")
+  ) %>%
+  group_by(Well, Treatment, Genotype, MOI, Replicate) %>%
+  arrange(Time, .by_group = TRUE) %>%
+  group_modify(~ {
+
+    df <- .x
+
+    if (nrow(df) < 2) {
+      return(tibble(
+        AUC = NA_real_,
+        control_AUC = NA_real_,
+        duration = NA_real_,
+        Virulence = NA_real_
+      ))
+    }
+
+    # Infected AUC
+    infected_auc <- DescTools::AUC(
+      x = df$Time,
+      y = df$OD600_corrected,
+      method = "trapezoid"
+    )
+
+    # Control OD600 at the same timepoints
+    matched_control <- approx(
+      x = control_curve$Time,
+      y = control_curve$control_OD600,
+      xout = df$Time,
+      rule = 1
+    )$y
+
+    control_auc <- if (all(is.finite(matched_control))) {
+      DescTools::AUC(
+        x = df$Time,
+        y = matched_control,
+        method = "trapezoid"
+      )
+    } else {
+      NA_real_
+    }
+
+    # Duration-corrected relative virulence
+    virulence <- if (
+      is.finite(control_auc) && control_auc > 0
+    ) {
+      1 - infected_auc / control_auc
+    } else {
+      NA_real_
+    }
+
+    tibble(
+      AUC = infected_auc,
+      control_AUC = control_auc,
+      duration = max(df$Time) - min(df$Time),
+      Virulence = virulence
+    )
+  }) %>%
+  ungroup()
+
+# 3. Final dataset
+virulence_data_trunc_min.app2 <- auc_data_trunc_min.app2
+
+
+
+# Plot 
+virulence_data_trunc_min.app2 <- virulence_data_trunc_min.app2 %>%
+  mutate(
+    MOI_numeric = as.numeric(as.character(MOI))
+  )
+
+virulence.reg_trunc_app2_plot <- ggplot(
+  virulence_data_trunc_min.app2,
+  aes(
+    x = MOI_numeric,
+    y = Virulence,
+    color = Genotype,
+    fill = Genotype
+  )
+) +
+  geom_point(
+    size = 2.5,
+    alpha = 0.7,
+    position = position_jitter(width = 0.03)
+  ) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    linewidth = 1
+  ) +
+  scale_x_log10(
+    breaks = c(0.1, 1, 10)
+  ) +
+  scale_color_manual(
+  values = c(
+    "mutant" = "#D55E00",
+    "wildtype" = "#0072B2"
+  )
+) +
+scale_fill_manual(
+  values = c(
+    "mutant" = "red",
+    "wildtype" = "blue"
+  )) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  labs(
+    x = "MOI",
+    y = "Relative virulence",
+    color = "Phage genotype",
+    fill = "Phage genotype"
+  ) 
+
+virulence.reg_trunc_app2_plot
+```
+# Some takeaways: 
+The data is super sensitive to how its analyzed, which is not a good sign
+We need to think about the time of infection here with respect to Spo0A onset. Our original hypothesis is that the mutant will be more virulent in the prescence of Spo0A (because no functioning 0A boxes = no lytic shut down). In previous experiments (with the old mutant prior to 2026), I added in the Spo0A gfp strain to the experiment as a marker for when sporulation started. I need to do that again when I run this experiment again and perhaps alter the time of infection based on that. Considering this, it might be the case that we have not captured virulence measurements at the right time with respect to sporulation.
+
+##### TRUNCATING BY TIME AND NOT BY POPULATION MINS ##########
+We need to probably truncate the OD600 values after each minimum is reached for each treatment, I assume this would be at the replicate level (i.e., find the minimum od600 for each well and then cut when it reaches the min )
+```{r}
+# Truncate the data when the minimum value is reached
+library(dplyr)
+
+
+# Function to identify first minimum after first maximum
+truncate_curve <- function(od) {
+
+  d <- diff(od)
+
+  if (length(d) == 0) {
+    return(seq_along(od))
+  }
+
+  # First maximum: OD600 starts decreasing
+  max_idx <- which(d < 0)[1]
+
+  if (is.na(max_idx)) {
+    return(seq_along(od))
+  }
+
+  # First minimum after maximum
+  after_max <- d[max_idx:length(d)]
+  stop_idx <- which(after_max >= 0)[1]
+
+  if (is.na(stop_idx)) {
+    min_idx <- length(od)
+  } else {
+    min_idx <- max_idx + stop_idx - 1
+  }
+
+  seq_len(min_idx)
+}
+
+# 1. Truncate infected replicates only
+truncated_infected_min <- OD600_long %>%
+  filter(
+    Treatment != "Control no phage",
+    Treatment != "DSM control"
+  ) %>%
+  group_by(Treatment, Genotype, MOI, Replicate, Well) %>%
+  arrange(Time, .by_group = TRUE) %>%
+  group_modify(~ .x[truncate_curve(.x$OD600), ]) %>%
+  ungroup()
+
+# 2. Calculate average truncation time for each treatment
+mean_truncation_times <- truncated_infected_min%>%
+  group_by(Treatment, Genotype, MOI, Replicate, Well) %>%
+  summarise(
+    truncation_time = max(Time),
+    .groups = "drop"
+  ) %>%
+  group_by(Treatment, Genotype, MOI) %>%
+  summarise(
+    mean_truncation_time = mean(truncation_time),
+    .groups = "drop"
+  )
+
+# 3. Keep original no-phage control
+control_data <- OD600_long %>%
+  filter(Treatment == "Control no phage")
+
+# 4. Create treatment-specific truncated controls
+control_truncated <- tidyr::crossing(
+  control_data,
+  mean_truncation_times %>%
+    rename(
+      Reference_Treatment = Treatment,
+      Reference_Genotype = Genotype,
+      Reference_MOI = MOI
+    )
+) %>%
+  filter(Time <= mean_truncation_time)
+
+# 5. Combine infected and control data
+truncated_data_min <- bind_rows(
+  truncated_infected_min,
+  control_truncated
+)
+
+
+# Plot to double check that the correct thing was done 
+ggplot(
+  truncated_data_min,
+  aes(
+    x = Time,
+    y = OD600,
+    group = Well,
+    color = Treatment
+  )
+) +
+  geom_line(alpha = 0.7) +
+  facet_wrap(~ Treatment) +
+  labs(
+    x = "Time (h)",
+    y = expression(OD[600])
+  ) 
+mean_truncation_times  
+```
+
+##### INITIAL TRUNCATION APPROACH; TRUNCATING BY TIME AND NOT BY POPULATION MINS ########
+Initial truncation --truncating all samples at 7 h
+After taking a second look at the data, there is the rise of mutants at about hour 10, and because we don't want this to influence our virulence measurements, we need to truncate the data 
+Let's truncate the data at 8 hours and then replot to see what we are working with 
+```{r}
+OD600_long_truncated <- OD600_long %>%
+  filter(Time <= 7)
+
+# Now replot
+ggplot(
+  OD600_long_truncated,
+  aes(
+    x = Time,
+    y = OD600,
+    group = Well,
+    color = Treatment
+  )
+) +
+  geom_line(
+    alpha = 0.6,
+    linewidth = 0.6
+  ) +
+  labs(
+    x = "Time (h)",
+    y = expression(OD[600]),
+    color = "Treatment")
+
+# Truncating at hour 9 looks good, and if needed, we can go back and truncate specific MOI treatments for mutants, but so far this looks good. 
+```
+
+1. Look at individual treatments and save 
+```{r}
+growth.plot <- ggplot(
+  truncated_data_min,
+  aes(
+    x = Time,
+    y = OD600,
+    group = Well
+  )
+) +
+  geom_line(
+    alpha = 0.7,
+    linewidth = 0.6
+  ) +
+  facet_wrap(
+    ~ Treatment,
+    ncol = 2
+  ) +
+  labs(
+    x = "Time (h)",
+    y = expression(OD[600])
+  )
+growth.plot
+# ggsave(
+#   "raw_growth_curves_1002_virulence.png",
+#   plot = growth.plot,
+#   width = 12,
+#   height = 10,
+#   units = "in",
+#   dpi = 300
+# )
+```
+
+2. Average replicate wells within treatment at each timepoint and plot mean growth curves
+```{r}
+OD600_summary_truncated_min <- truncated_data_min%>%
+  group_by(Time, Treatment) %>%
+  summarise(
+    mean_OD = mean(OD600, na.rm = TRUE),
+    sd_OD = sd(OD600, na.rm = TRUE),
+    n = sum(!is.na(OD600)),
+    se_OD = sd_OD / sqrt(n),
+    .groups = "drop"
+  )
+
+avg.plot <- ggplot(
+  OD600_summary_truncated_min,
+  aes(
+    x = Time,
+    y = mean_OD,
+    color = Treatment
+  )
+) +
+  geom_line(linewidth = 1) +
+  labs(
+    x = "Time (h)",
+    y = expression("Mean " * OD[600]),
+    color = "Treatment"
+  )
+
+avg.plot
+# Plot with uncertainty ribbon 
+
+avg.plot <- ggplot(
+  OD600_summary_truncated_min,
+  aes(
+    x = Time,
+    y = mean_OD,
+    color = Treatment,
+    fill = Treatment
+  )
+) +
+  geom_ribbon(
+    aes(
+      ymin = mean_OD - se_OD,
+      ymax = mean_OD + se_OD
+    ),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1) +
+  labs(
+    x = "Time (h)",
+    y = expression("Mean " * OD[600]),
+    color = "Treatment",
+    fill = "Treatment"
+  )
+
+avg.plot
+```
+
+
+3. Calculate virulence 
+```{r}
+library(DescTools)
+library(dplyr)
+```
+
+```{r}
+# Filter data based on time of infection time of infection = 4.73 so filter all data after that to calculate AUC
+virulence.od_trunc_MIN <- truncated_data_min %>%
+  filter(Time >= 4.73)
+
+auc_data_trunc_min <- virulence.od_trunc_MIN %>%
+  group_by(Well, Treatment, Genotype, MOI) %>%
+  summarise(
+    AUC = AUC(
+      x = Time,
+      y = OD600,
+      method = "trapezoid"
+    ),
+    .groups = "drop"
+  )
+auc_data_trunc_min
+
+# Calculate control AUC
+control_auc_trunc_min <- auc_data_trunc_min %>%
+  filter(Treatment == "Control no phage") %>%
+  summarise(
+    mean_control_AUC = mean(AUC, na.rm = TRUE)
+  ) %>%
+  pull(mean_control_AUC)
+
+# Calculate virulence
+auc_data_trunc_min <- auc_data_trunc_min %>%
+  mutate(
+    Virulence = 1 - (AUC / control_auc_trunc_min)
+  )
+# Subset virulence data for mutant and genotype not the control 
+virulence_data_trunc_min <- auc_data_trunc_min %>%
+  filter(Genotype %in% c("mutant", "wildtype"))
+```
+# # Checking why virulence values are negative (this code chunk is from the first experiment that I messed up)
+# 
+# ```{r}
+# auc_data %>%
+#   group_by(Treatment) %>%
+#   summarise(
+#     mean_AUC = mean(AUC, na.rm = TRUE),
+#     sd_AUC = sd(AUC, na.rm = TRUE),
+#     n = n()
+#   )
+# 
+# ggplot(
+#   virulence.od,
+#   aes(
+#     x = Time,
+#     y = OD600,
+#     color = Treatment
+#   )
+# ) +
+#   stat_summary(
+#     fun = mean,
+#     geom = "line",
+#     linewidth = 1
+#   ) +
+#   geom_vline(
+#     xintercept = 3.73,
+#     linetype = "dashed"
+#   ) +
+#   labs(
+#     x = "Time (h)",
+#     y = expression(OD[600]),
+#     color = "Treatment"
+#   ) 
+
+4. Plotting no infection control with time of infection to see where in the growth curve the cells were 
+```{r}
+ggplot(
+  OD600_long_truncated %>% filter(Treatment == "Control no phage"),
+  aes(x = Time, y = OD600, group = Well)
+) +
+  geom_line(alpha = 0.4) +
+  stat_summary(
+    aes(group = 1),
+    fun = mean,
+    geom = "line",
+    linewidth = 1.2
+  ) +
+  geom_vline(
+    xintercept = 4.73,
+    linetype = "dashed"
+  ) +
+  labs(
+    x = "Time (h)",
+    y = expression(OD[600])
+  )
+```
+
+
+
+5. Plotting raw OD600 data by MOI and then use contrasting colors or line types so that its easier to see mutant and wildtype 
+```{r}
+auc_data_trunc %>%
+  group_by(Treatment) %>%
+  summarise(
+    mean_AUC = mean(AUC, na.rm = TRUE),
+    sd_AUC = sd(AUC, na.rm = TRUE),
+    n = n()
+  )
+
+ggplot(
+  virulence.od_trunc,
+  aes(
+    x = Time,
+    y = OD600,
+    color = Treatment
+  )
+) +
+  stat_summary(
+    fun = mean,
+    geom = "line",
+    linewidth = 1
+  ) +
+  geom_vline(
+    xintercept = 4.73,
+    linetype = "dashed"
+  ) +
+  labs(
+    x = "Time (h)",
+    y = expression(OD[600]),
+    color = "Treatment"
+  ) 
+```
+
+
+6. Plot individual replicate growth curves
+```{r}
+library(ggplot2)
+library(dplyr)
+
+
+# Add a replicate column 
+library(dplyr)
+
+virulence.od_trunc <- virulence.od_trunc %>%
+  group_by(Treatment) %>%
+  mutate(
+    Replicate = as.integer(factor(Well))
+  ) %>%
+  ungroup()
+
+# Prepare data
+plot_data <- virulence.od_trunc %>%
+  mutate(
+    Genotype = case_when(
+      grepl("Wildtype", Treatment, ignore.case = TRUE) ~ "Wildtype",
+      grepl("Mutant", Treatment, ignore.case = TRUE) ~ "Mutant",
+      grepl("Control no phage", Treatment, ignore.case = TRUE) ~ "Control",
+      TRUE ~ NA_character_
+    ),
+    MOI = case_when(
+      grepl("MOI 0.1$", Treatment) ~ "0.1",
+      grepl("MOI 1$", Treatment) ~ "1",
+      grepl("MOI 10$", Treatment) ~ "10",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(Genotype))
+
+# Replicate control across all MOI panels
+control_data <- plot_data %>%
+  filter(Genotype == "Control") %>%
+  select(-MOI) %>%
+  tidyr::crossing(MOI = c("0.1", "1", "10"))
+
+# Combine treatment and control data
+plot_data <- bind_rows(
+  plot_data %>% filter(Genotype != "Control"),
+  control_data
+) %>%
+  mutate(
+    Genotype = factor(
+      Genotype,
+      levels = c("Control", "Wildtype", "Mutant")
+    ),
+    MOI = factor(MOI, levels = c("0.1", "1", "10"))
+  )
+
+# Plot individual replicate curves
+plot.od <- ggplot(
+  plot_data,
+  aes(
+    x = Time,
+    y = OD600,
+    color = Genotype,
+    linetype = Genotype,
+    group = interaction(Genotype, MOI, Replicate)
+  )
+) +
+  geom_line(
+    linewidth = 0.65,
+    alpha = 0.65
+  ) +
+  facet_wrap(
+    ~ MOI,
+    nrow = 1
+  ) +
+  geom_vline(
+    xintercept = 4.73,
+    linetype = "dotted",
+    color = "gray40"
+  ) +
+  scale_color_manual(
+    values = c(
+      "Control" = "black",
+      "Wildtype" = "blue",
+      "Mutant" = "red"
+    )
+  ) +
+  scale_linetype_manual(
+    values = c(
+      "Control" = "solid",
+      "Wildtype" = "solid",
+      "Mutant" = "solid"
+    )
+  ) +
+  labs(
+    x = "Time (h)",
+    y = expression(OD[600]),
+    color = "Treatment",
+    linetype = "Treatment"
+  ) 
+plot.od
+
+ggsave(
+  "moi_panel_1002plate_truncated.png",
+  plot = plot.od,
+  width = 8,
+  height = 5,
+  dpi = 300
+)
+```
+
+7.Plotting viruelnce by genotype via boxplot
+```{r}
+virulence_data_trunc_min <- virulence_data_trunc_min %>%
+  mutate(
+    MOI = factor(MOI, levels = c(0.1, 1, 10)),
+    Genotype = factor(
+      Genotype,
+      levels = c("wildtype", "mutant")
+    )
+  )
+virulence.fig_trunc <- ggplot(
+  virulence_data_trunc_min,
+  aes(
+    x = MOI,
+    y = Virulence,
+    fill = Genotype
+  )
+) +
+  geom_boxplot(
+    position = position_dodge(width = 0.75),
+    width = 0.6,
+    outlier.shape = NA
+  ) +
+  geom_point(
+    aes(color = Genotype),
+    position = position_jitterdodge(
+      jitter.width = 0.08,
+      dodge.width = 0.75
+    ),
+    alpha = 0.7,
+    size = 2
+  ) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  labs(
+    x = "MOI",
+    y = "Relative virulence",
+    fill = "Phage genotype",
+    color = "Phage genotype"
+  ) 
+
+virulence.fig_trunc
+```
+
+# Old code from plotting truncated data by the hour (not the min for each population)
+```{r}
+virulence.fig <- ggplot(
+  virulence_data_trunc,
+  aes(
+    x = MOI,
+    y = Virulence,
+    fill = Genotype
+  )
+) +
+  geom_boxplot(
+    position = position_dodge(width = 0.75),
+    width = 0.6,
+    outlier.shape = NA
+  ) +
+  geom_point(
+    aes(color = Genotype),
+    position = position_jitterdodge(
+      jitter.width = 0.08,
+      dodge.width = 0.75
+    ),
+    alpha = 0.7,
+    size = 2
+  ) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  scale_fill_manual(
+    values = rev(scales::hue_pal()(2))
+  ) +
+  scale_color_manual(
+    values = rev(scales::hue_pal()(2))
+  ) +
+  labs(
+    x = "MOI",
+    y = "Relative virulence",
+    fill = "Phage genotype",
+    color = "Phage genotype"
+  )
+
+virulence.fig
+ggsave(
+  "virulence_genotype_moi_1002plate.png",
+  plot = virulence.fig,
+  width = 8,
+  height = 5,
+  dpi = 300
+)
+
+```
+
+8. Also plot linearly
+```{r}
+virulence_data_trunc <- virulence_data_trunc_min %>%
+  mutate(
+    MOI_numeric = as.numeric(as.character(MOI))
+  )
+
+virulence.reg_trunc <- ggplot(
+  virulence_data_trunc,
+  aes(
+    x = MOI_numeric,
+    y = Virulence,
+    color = Genotype,
+    fill = Genotype
+  )
+) +
+  geom_point(
+    size = 2.5,
+    alpha = 0.7,
+    position = position_jitter(width = 0.03)
+  ) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    linewidth = 1
+  ) +
+  scale_x_log10(
+    breaks = c(0.1, 1, 10)
+  ) +
+  scale_color_manual(
+    values = rev(scales::hue_pal()(2))
+  ) +
+  scale_fill_manual(
+    values = rev(scales::hue_pal()(2))
+  ) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  labs(
+    x = "MOI",
+    y = "Relative virulence",
+    color = "Phage genotype",
+    fill = "Phage genotype"
+  ) 
+
+virulence.reg_trunc
+```
+9. Linear regression results
+```{r}
+virulence_model <- lm(
+  Virulence ~ log10(MOI_numeric) * Genotype,
+  data = virulence_data
+)
+
+summary(virulence_model)
+```
+Dissecting the output of the lm
+Call:
+lm(formula = Virulence ~ log10(MOI_numeric) * Genotype, data = virulence_data)
+
+Residuals:
+      Min        1Q    Median        3Q       Max 
+-0.184594 -0.032322 -0.002533  0.033233  0.150043 
+
+Coefficients:
+                                  Estimate Std. Error t value Pr(>|t|)    
+(Intercept)                        0.12873    0.01331   9.675 1.84e-12 ***
+log10(MOI_numeric)                 0.05274    0.01630   3.236  0.00230 ** 
+Genotypemutant                    -0.02070    0.01882  -1.100  0.27733    
+log10(MOI_numeric):Genotypemutant -0.06851    0.02305  -2.973  0.00477 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 0.06519 on 44 degrees of freedom # root mean squared error, i.e., what is the average error on this dataset i.e., how far away are the points away from the predicted points of the mode, measures the quality of the fit in units of the outcome variable, 
+
+Multiple R-squared:  0.2229,	Adjusted R-squared:  0.1699  # information about the fit of the model, and adjustment for the number of different predictors in the model, the model was only able to predict about 22% 
+F-statistic: 4.206 on 3 and 44 DF,  p-value: 0.01061
+
+#
+Standard error: a measure how far off we expect the estimates to be based on the values of all of the data (what it really is is the standard deviation of the sampling distribution)
+
+T statistic: the ratio of estimate to std error, can be interpreted as a signal to noise ratio, ie. how big the estimate is relative to the error, t stats that are higher in their value of absolute magnitude  , higher t stats reflect parameters that are more precisely estimated relative to their magnitude 
+
+Probability greater than abs value of t 

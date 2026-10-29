@@ -43,7 +43,7 @@ colors <-paletteer_d("ggthemes::Miller_Stone")
 2. Load cell synchrony data --> note to self need to divide cell counts by 7 to account for the concentrating of the sample in the lab (7 mL --> 1 mL)
 ```{r}
 library(readxl)
-sync <- read_excel("~/GitHub/VirosporeQuant/Optimal.entrap/20260626_1522_cellsynchrony_github.xlsx", sheet = "sync")
+sync <- read_excel("~/GitHub/VirosporeQuant/Optimal.entrap/Data/20260626_1522_cellsynchrony_github.xlsx", sheet = "sync")
 ```
 
 2. Calculate spore fraction of cells and plot to get initial sense of data
@@ -120,17 +120,17 @@ ggplot(sync, aes(x = `Time (h)`, y = OD600)) +
 ```{r}
 # Convert to long format
 sync_counts_long <- sync %>%
-  select(`Time (h)`, Replicate, veg.cells.ml, spores.ml) %>%
+  select(`Time (h)`, Replicate, veg.cells.ml.vol.corr, spores.ml.vol.corr) %>%
   pivot_longer(
-    cols = c(veg.cells.ml, spores.ml),
+    cols = c(veg.cells.ml.vol.corr, spores.ml.vol.corr),
     names_to = "Cell_type",
     values_to = "cells_per_ml"
   ) %>%
   mutate(
     Cell_type = recode(
       Cell_type,
-      veg.cells.ml = "Vegetative cells",
-      spores.ml = "Spores"
+      veg.cells.ml.vol.corr = "Vegetative cells",
+      spores.ml.vol.corr = "Spores"
     )
   )
 sync_counts_long <- sync_counts_long %>% # reorder vegetative cells and spores so that they appear correctly in the figure
