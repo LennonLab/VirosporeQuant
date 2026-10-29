@@ -75,11 +75,22 @@ efficiency_summary <- opt.df %>%
     sd_EE = sd(entrapment_percent, na.rm = TRUE),
     se_EE = sd_EE / sqrt(n),
     .groups = "drop"
+  ) %>%
+  filter(
+    !is.na(MOI),
+    !is.na(Infection.time.h),
+    !is.na(mean_EE),
+    n > 1
   )
 
 ggplot() +
   geom_point(
-    data = opt.df,
+    data = opt.df %>%
+      filter(
+        !is.na(MOI),
+        !is.na(Infection.time.h),
+        !is.na(entrapment_percent)
+      ),
     aes(
       x = Infection.time.h,
       y = entrapment_percent,
@@ -125,8 +136,8 @@ ggplot() +
     x = "Infection time (h)",
     y = "Entrapment efficiency (%)",
     color = "MOI",
-    title = "Entrapment efficiency by infection time and MOI"
-  ) 
+    title = ""
+  )
 ```
 
 ```{r}
@@ -139,7 +150,7 @@ opt.df %>%
   ) %>%
   select(
     Sample, Infection.time.h, Rep, MOI,
-    spores.ml, virospores.ml, total_spores_ml,
+    spores.ml.corrected, virospores.ml.corrected, total_spores_ml,
     entrapment_percent
   )
 # Create clean dataset
@@ -488,6 +499,89 @@ panel_A <- ggplot(spore_summary_log,
   ) 
 panel_A
 ```
+One of the problems with this experiment was that plaque forming units were not scaling properly with dilution as expected, so I ran a small experiment with a fresh virospore sample 
+```{r}
+plaque.df <- data.frame(
+  dilution = c(
+    1e-4, 1e-4, 1e-4,
+    1e-6, 1e-6, 1e-6,
+    1e-8, 1e-8, 1e-8,
+    1e-10, 1e-10, 1e-10
+  ),
+  
+  rep = c(
+    1, 2, 3,
+    1, 2, 3,
+    1, 2, 3,
+    1, 2, 3
+  ),
+  
+  pfu = c(
+    272, 368, 359,
+    45, 44, 50,
+    35, 35, 37,
+    32, 39, 34
+  )
+)
+
+library(dplyr)
+
+plaque_summary <- plaque.df %>%
+  group_by(dilution) %>%
+  summarise(
+    mean_pfu = mean(pfu),
+    sd_pfu = sd(pfu),
+    se_pfu = sd_pfu / sqrt(n()),
+    n = n(),
+    .groups = "drop"
+  )
+
+plaque_summary
+
+
+ggplot(
+  plaque.df,
+  aes(
+    x = dilution,
+    y = pfu
+  )
+) +
+  geom_point(
+    alpha = 0.6,
+    size = 2.5
+  ) +
+  geom_line(
+    data = plaque_summary,
+    aes(
+      x = dilution,
+      y = mean_pfu
+    ),
+    linewidth = 0.8
+  ) +
+  geom_point(
+    data = plaque_summary,
+    aes(
+      x = dilution,
+      y = mean_pfu
+    ),
+    size = 3
+  ) +
+  scale_x_log10(
+    breaks = c(1e-10, 1e-8, 1e-6, 1e-4),
+    labels = c(
+      expression(10^-10),
+      expression(10^-8),
+      expression(10^-6),
+      expression(10^-4)
+    )
+  ) +
+  labs(
+    x = "Virospore sample dilution",
+    y = "Plaques per plate"
+  )
+```
+
+
 
 Checking data distribution 
 ```{r}

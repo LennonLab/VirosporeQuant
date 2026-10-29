@@ -5,6 +5,7 @@ date: "2025-08-19"
 output: html_document
 ---
 
+
 ```{r setup, include=FALSE}
 setwd("~/GitHub/VirosporeQuant/SPO1_mutant")
 ```
@@ -55,22 +56,29 @@ library(mgcv)
 
 2. Load data
 ```{r}
-data <- read_excel("~/GitHub/VirosporeQuant/SPO1_mutant/Data/20250819_1900_SPO1WTmutant_annulus_data.xlsx", sheet = "annulus_data")
+data <- read_excel("~/GitHub/VirosporeQuant/SPO1_mutant/Data//20260917_0011_annulus_test.xlsx", sheet = "Sheet1")
 ```
 
 3. Account for the dilutions performed and the stock
 ```{r}
 # Calculate vPFU of the original suspension which is # of PFU or CFU / vol plated x total dilution factor
-data$vPFU_mL_2 <- data$vPFU_10e2/ (0.1 * (10^-2))
+#data$vPFU_mL_2 <- data$vPFU_10e2/ (0.1 * (10^-2))
+# No need to perform the above with the new data, there was no dilution performed in the new data (20260917)
+
+# Calculate vPFU per mL (plated 0.1 mL and did not dilute sample)
+
+data <- data %>%
+  mutate(
+    vPFU.ml = vPFU * 10
+  )
 # Accounting for the stock amount (the amount of liquid that the virospores were deposited into in mL)
-data$vPFU_stock <- data$vPFU_mL_2 * 0.2
+#data$vPFU_stock <- data$vPFU_mL_2 * 0.1
 ```
 
 4. Account for the area sampled 
-
 ```{r}
 # Calculate per area for virospores
-data$vPFU_cm2 <- data$vPFU_stock / (0.00785)
+data$vPFU_cm2 <- data$vPFU.ml / (0.00785)
 ```
 
 5. Plot via box plot
@@ -99,14 +107,19 @@ ggplot(data, aes(x = Genotype, y = vPFU_cm2, fill = Genotype)) +
     title = "",
     x = "Genotype",
     y = "Virospores per cm²"
+  ) + 
+  scale_y_continuous(
+    expand = expansion(mult = c(0.05, 0.20)),
+    labels = scales::label_scientific()
   ) +
   geom_signif(
     comparisons = list(c("wildtype", "mutant")),
     annotations = "NS",
-    y_position = 2050000,
+    y_position = 2090000,
     tip_length = 0.03,
     textsize = 8
-  )
+  ) +
+  theme(legend.position = "none", aspect.ratio = 1)
 
 ```
 6. Test for difference?
@@ -116,6 +129,261 @@ ggplot(data, aes(x = Genotype, y = vPFU_cm2, fill = Genotype)) +
 shapiro.test(data$vPFU_cm2) #p value = 0.02 indicating that data is normally distributed
 t.test(vPFU_cm2 ~ Genotype, data = data)
 ```
+7. Entrapment efficiency between mutant and wildtype SPO1 using batch culture (currently the second experiment)
+```{r}
+batch.data <- read_excel("~/GitHub/VirosporeQuant/SPO1_mutant/Data//20260928_1916_spo1mutant_entrapefficiency_batchculture.xlsx", sheet = "Sheet1")
+```
+
+8. Calculate virospores and spores per mL and correct for 7 mL of total culture 
+Note: 7 mL of total culture for the first batch experiment (20280918 data)
+For the 20260928 data it's 8 mL for wild type and 7mL for mutant 
+```{r}
+batch.data <- batch.data %>%
+  mutate(
+    spores.ml = (cfu / (cfu.dilution * vol.plated)) /
+      if_else(genotype == "wildtype", 8, 7)
+  )
+
+format(batch.data$spores.ml, scientific = TRUE)
+
+# Calculate virospores per mL
+batch.data <- batch.data %>%
+  mutate(
+    virospores.ml = (vpfu / (vpfu.dilution * vol.plated)) /
+      if_else(genotype == "wildtype", 8, 7)
+  )
+
+format(batch.data$virospores.ml, scientific = TRUE)
 
 
+# # Calculate spores per mL
+# batch.data <- batch.data %>%
+#   mutate(
+#     spores.ml = (cfu / (cfu.dilution * vol.plated)) / 7 #to account for 7mLs of culture that was concentrated to 1ml
+#   )
+# format(batch.data$spores.ml, scientific = TRUE)
+# # Calculate virospores per mL 
+# batch.data <- batch.data %>%
+#   mutate(
+#     virospores.ml = (vpfu / (vpfu.dilution * vol.plated)) / 7 #to account for 7mLs of culture that was concentrated to 1ml
+#   )
+# format(batch.data$virospores.ml, scientific = TRUE)
+
+# Calculate total spores 
+batch.data <- batch.data %>%
+  mutate(
+    total.spores.ml = spores.ml + virospores.ml
+  )
+
+# Calculate entrapment efficiency 
+batch.data <- batch.data %>%
+  mutate(
+    ee = (virospores.ml / total.spores.ml) * 100
+  )
+
+
+```
+
+
+9. Plot
+```{r}
+library(tidyverse)
+
+# Summarize EE by genotype
+ee.summary <- batch.data %>%
+  group_by(genotype) %>%
+  summarise(
+    mean.ee = mean(ee, na.rm = TRUE),
+    sd.ee = sd(ee, na.rm = TRUE),
+    se.ee = sd.ee / sqrt(n()),
+    .groups = "drop"
+  )
+
+# Plot
+ggplot() +
+  geom_point(
+    data = batch.data,
+    aes(
+      x = genotype,
+      y = ee
+    ),
+    position = position_jitter(width = 0.08),
+    size = 3,
+    alpha = 0.7
+  ) +
+  geom_point(
+    data = ee.summary,
+    aes(
+      x = genotype,
+      y = mean.ee
+    ),
+    size = 4
+  ) +
+  geom_errorbar(
+    data = ee.summary,
+    aes(
+      x = genotype,
+      ymin = mean.ee - se.ee,
+      ymax = mean.ee + se.ee
+    ),
+    width = 0.15,
+    linewidth = 0.8
+  ) +
+  labs(
+    x = "SPO1 genotype",
+    y = "Entrapment efficiency (%)"
+  )
+```
+
+```{r}
+# Summarize virospores by genotype
+viro.summary <- batch.data %>%
+  group_by(genotype) %>%
+  summarise(
+    mean.viro = mean(virospores.ml, na.rm = TRUE),
+    sd.viro = sd(virospores.ml, na.rm = TRUE),
+    se.viro = sd.viro / sqrt(n()),
+    .groups = "drop"
+  )
+
+
+```
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+library(ggsignif)
+
+# Set genotype order
+batch.data$genotype <- factor(
+  batch.data$genotype,
+  levels = c("wildtype", "mutant")
+)
+
+# Plot entrapment efficiency
+ee.fig <- ggplot(
+  batch.data,
+  aes(
+    x = genotype,
+    y = ee,
+    fill = genotype
+  )
+) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = rev(scales::hue_pal()(2))
+  ) +
+  geom_jitter(
+    width = 0.04,
+    height = 0,
+    alpha = 0.7,
+    size = 3
+  ) +
+  labs(
+    title = "",
+    x = "Genotype",
+    y = "Entrapment efficiency (%)"
+  ) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0.05, 0.20))
+  ) +
+  #stat_compare_means(
+    #comparisons = list(c("wildtype", "mutant")),
+    #method = "t.test",
+    #label = "p.signif"
+  #) +
+  theme(
+    legend.position = "none",
+    aspect.ratio = 1
+  )
+
+ee.fig
+
+# Save plot
+ggsave(
+  "entrapment_efficiency_batchculture0928.png",
+  plot = ee.fig,
+  width = 5,
+  height = 5,
+  dpi = 300
+)
+```
+
+```{r}
+batch.data %>%
+  select(sample, genotype, spores.ml, virospores.ml, ee)
+```
+
+10. Looking at the data and running stats, replotting with stats in plot
+```{r}
+batch.data %>%
+  select(sample, genotype, ee)
+
+ggplot(batch.data, aes(sample = ee)) +
+  stat_qq() +
+  stat_qq_line() +
+  facet_wrap(~ genotype)
+
+# Welch's t test
+t.test(
+  ee ~ genotype,
+  data = batch.data,
+  var.equal = FALSE
+)
+
+# Replotting and adding stats to figure 
+# Plot entrapment efficiency
+ee.fig <- ggplot(
+  batch.data,
+  aes(
+    x = genotype,
+    y = ee,
+    fill = genotype
+  )
+) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = rev(scales::hue_pal()(2))
+  ) +
+  geom_jitter(
+    width = 0.04,
+    height = 0,
+    alpha = 0.7,
+    size = 3
+  ) +
+  labs(
+    title = "",
+    x = "Genotype",
+    y = "Entrapment efficiency (%)"
+  ) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0.05, 0.20))
+  ) +
+  stat_compare_means(
+  comparisons = list(c("wildtype", "mutant")),
+  method = "t.test",
+  label = "p.signif",
+  label.y = 60,
+  symnum.args = list(
+    cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, Inf),
+    symbols = c("****", "***", "**", "*", "NS")
+  )
+) +
+  #) +
+  theme(
+    legend.position = "none",
+    aspect.ratio = 1
+  )
+
+ee.fig
+
+# Save plot
+ggsave(
+  "entrapment_efficiency_batchculture0928_wstat.png",
+  plot = ee.fig,
+  width = 5,
+  height = 5,
+  dpi = 300
+)
+```
 
